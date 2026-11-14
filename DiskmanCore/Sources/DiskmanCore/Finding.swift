@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Something on disk that a scanner proposes to remove.
@@ -25,15 +26,29 @@ public struct Finding: Identifiable, Hashable, Sendable {
 }
 
 extension URL {
-    /// Disk space taken by a file, or by a folder with everything inside it.
+    /// Disk space taken by a file, or by a folder with everything inside it, like `du -sk`:
+    /// allocated blocks, symlinks never followed, other volumes skipped, hard-linked files counted once.
     var allocatedSize: Int64 {
-        let keys: Set<URLResourceKey> = [.totalFileAllocatedSizeKey]
-        func size(_ url: URL) -> Int64 {
-            Int64((try? url.resourceValues(forKeys: keys))?.totalFileAllocatedSize ?? 0)
+        struct FileID: Hashable { let dev: dev_t, ino: ino_t }
+        return withUnsafeFileSystemRepresentation { path -> Int64 in
+            guard let path, let fts = fts_open([UnsafeMutablePointer(mutating: path), nil], FTS_PHYSICAL | FTS_NOCHDIR | FTS_XDEV, nil) else {
+                return 0
+            }
+            defer { fts_close(fts) }
+            var total: Int64 = 0
+            var seen = Set<FileID>()
+            while let entry = fts_read(fts), !Task.isCancelled {
+                switch Int32(entry.pointee.fts_info) {
+                case FTS_DP, FTS_DC, FTS_ERR, FTS_NS, FTS_NSOK: continue   // already counted, or no stat
+                default: break
+                }
+                let st = entry.pointee.fts_statp.pointee
+                if st.st_nlink > 1, st.st_mode & S_IFMT != S_IFDIR, !seen.insert(FileID(dev: st.st_dev, ino: st.st_ino)).inserted {
+                    continue
+                }
+                total += Int64(st.st_blocks) * 512
+            }
+            return total
         }
-        guard let children = FileManager.default.enumerator(at: self, includingPropertiesForKeys: Array(keys)) else {
-            return size(self)
-        }
-        return children.reduce(size(self)) { $0 + (($1 as? URL).map(size) ?? 0) }
     }
 }

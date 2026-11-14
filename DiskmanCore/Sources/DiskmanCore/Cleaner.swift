@@ -37,31 +37,50 @@ public enum Cleaner {
     /// a later rule skips items equal to, inside, or containing an already-claimed path
     /// (so a generic "~/Library/Caches/*" rule doesn't double-count Homebrew's cache).
     public static func scan(_ rules: [CleanupRule] = CleanupRule.builtIn, home: URL = .homeDirectory) async -> [CleanupResult] {
-        // Globbing is cheap and claims go in rule order; sizing is slow and runs concurrently.
-        var claimed: [String] = []
-        var items: [(rule: Int, url: URL)] = []
-        for (index, rule) in rules.enumerated() {
-            for url in rule.paths.flatMap({ expand($0, home: home) }) {
-                let path = url.path
-                guard !claimed.contains(where: { $0 == path || path.hasPrefix($0 + "/") || $0.hasPrefix(path + "/") }) else { continue }
-                claimed.append(path)
-                items.append((index, url))
+        var byID: [String: CleanupResult] = [:]
+        for await result in results(rules, home: home) { byID[result.id] = result }
+        return rules.compactMap { byID[$0.id] }.filter { !$0.findings.isEmpty }
+    }
+
+    /// Every rule's result, empty ones included, as soon as its sizing finishes (so not in rule order).
+    /// Claims work as in `scan`. Cancelling the consuming task stops the scan.
+    public static func results(_ rules: [CleanupRule] = CleanupRule.builtIn, home: URL = .homeDirectory) -> AsyncStream<CleanupResult> {
+        AsyncStream { continuation in
+            let task = Task {
+                // Globbing is cheap and claims go in rule order; sizing is slow and runs concurrently.
+                var claimed: [String] = []
+                var urls = [[URL]](repeating: [], count: rules.count)
+                for (index, rule) in rules.enumerated() {
+                    for url in rule.paths.flatMap({ expand($0, home: home) }) {
+                        let path = url.path
+                        guard !claimed.contains(where: { $0 == path || path.hasPrefix($0 + "/") || $0.hasPrefix(path + "/") }) else { continue }
+                        claimed.append(path)
+                        urls[index].append(url)
+                    }
+                }
+                var pending = urls.map(\.count)
+                var found = [[Finding]](repeating: [], count: rules.count)
+                func finish(_ index: Int) {
+                    continuation.yield(CleanupResult(rule: rules[index], findings: found[index].sorted {
+                        $0.size != $1.size ? $0.size > $1.size : $0.url.path < $1.url.path
+                    }))
+                }
+                for index in rules.indices where pending[index] == 0 { finish(index) }
+                await withTaskGroup(of: (Int, Finding).self) { group in
+                    for (index, rule) in rules.enumerated() {
+                        for url in urls[index] {
+                            group.addTask { (index, Finding(url: url, kind: rule.kind, isCertain: rule.isSafe)) }
+                        }
+                    }
+                    for await (index, finding) in group {
+                        if finding.size > 0 { found[index].append(finding) }   // empty or unreadable: nothing to gain
+                        pending[index] -= 1
+                        if pending[index] == 0 { finish(index) }
+                    }
+                }
+                continuation.finish()
             }
-        }
-        let found = await withTaskGroup(of: (Int, Finding).self) { group in
-            for (index, url) in items {
-                let rule = rules[index]
-                group.addTask { (index, Finding(url: url, kind: rule.kind, isCertain: rule.isSafe)) }
-            }
-            var byRule = [[Finding]](repeating: [], count: rules.count)
-            // Empty or unreadable (size 0): nothing to gain.
-            for await (index, finding) in group where finding.size > 0 { byRule[index].append(finding) }
-            return byRule
-        }
-        return zip(rules, found).compactMap { rule, findings in
-            findings.isEmpty ? nil : CleanupResult(rule: rule, findings: findings.sorted {
-                $0.size != $1.size ? $0.size > $1.size : $0.url.path < $1.url.path
-            })
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 

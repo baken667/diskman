@@ -85,3 +85,54 @@ import Testing
     // A home folder itself is never returned, whatever the pattern.
     #expect(Cleaner.expand("~/*", home: URL(filePath: "/Users")).allSatisfy { $0.pathComponents.count > 3 } )
 }
+
+@Test func allocatedSizeCountsLikeDu() throws {
+    let fm = FileManager.default
+    let root = fm.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fm.removeItem(at: root) }
+    let outside = fm.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fm.removeItem(at: outside) }
+    try fm.createDirectory(at: root.appending(path: "a/b/c"), withIntermediateDirectories: true)
+    try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+    try Data(count: 100_000).write(to: root.appending(path: "a/b/c/deep"))
+    try Data(count: 100_000).write(to: outside.appending(path: "big"))
+    let base = root.allocatedSize
+    #expect(base >= 100_000)                                     // nested folders are walked
+    #expect(root.appending(path: "a/b/c/deep").allocatedSize >= 100_000)   // a plain file works too
+
+    try fm.linkItem(at: root.appending(path: "a/b/c/deep"), to: root.appending(path: "a/twin"))
+    try fm.createSymbolicLink(at: root.appending(path: "a/link"), withDestinationURL: outside)
+    let after = root.allocatedSize
+    #expect(after < base + 100_000)                              // hard link counted once, symlink not followed
+    #expect(root.appending(path: "a/link").allocatedSize < 100_000)   // not even when it is the root
+    #expect(fm.temporaryDirectory.appending(path: "missing-\(UUID())").allocatedSize == 0)
+}
+
+@Test func streamYieldsEveryRuleLikeScan() async throws {
+    let fm = FileManager.default
+    let home = fm.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fm.removeItem(at: home) }
+    for path in ["Library/Caches/A/x", "Library/Caches/A/y", "Library/Logs/B/z"] {
+        try fm.createDirectory(at: home.appending(path: path), withIntermediateDirectories: true)
+        try Data(count: 5000).write(to: home.appending(path: path + "/blob"))
+    }
+    let json = """
+    [
+      {"id": "a", "name": "A", "description": "", "group": "G", "kind": "caches", "isSafe": true, "paths": ["~/Library/Caches/A/*"], "appBundleIDs": []},
+      {"id": "none", "name": "None", "description": "", "group": "G", "kind": "caches", "isSafe": true, "paths": ["~/Missing/*"], "appBundleIDs": []},
+      {"id": "b", "name": "B", "description": "", "group": "G", "kind": "logs", "isSafe": false, "paths": ["~/Library/Logs/*"], "appBundleIDs": []}
+    ]
+    """
+    let rules = try JSONDecoder().decode([CleanupRule].self, from: Data(json.utf8))
+    var streamed: [CleanupResult] = []
+    for await result in Cleaner.results(rules, home: home) { streamed.append(result) }
+    #expect(streamed.map(\.id).sorted() == ["a", "b", "none"])
+    #expect(streamed.first { $0.id == "none" }?.findings.isEmpty == true)
+
+    let scanned = await Cleaner.scan(rules, home: home)
+    #expect(scanned.map(\.id) == ["a", "b"])
+    for result in scanned {
+        let match = try #require(streamed.first { $0.id == result.id })
+        #expect(match.findings == result.findings)
+    }
+}

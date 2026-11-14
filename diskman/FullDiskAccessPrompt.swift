@@ -36,7 +36,6 @@ struct FullDiskAccessBanner: View {
                 Text("Allow Full Disk Access").font(.headline)
                 Text("Without it, diskman can't see leftovers in protected folders such as other apps' containers. Everything you remove still only goes to the Trash.")
                     .font(.subheadline).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Button("Open System Settings") { model.openSettings() }.buttonStyle(.borderedProminent)
                     Button("Relaunch") { model.relaunch() }

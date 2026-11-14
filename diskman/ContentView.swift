@@ -33,7 +33,13 @@ struct ContentView: View {
                     }
                 }
             }
-            .searchable(text: $search, placement: .sidebar)
+            // Pinned above the list, like System Settings' sidebar search. `.searchable(placement: .sidebar)`
+            // puts the field inside the list's scroll view, so it scrolled away; `.toolbar` would put it
+            // over the detail column, away from the list it filters. A safe-area bar keeps it in place and
+            // gets the system scroll edge effect, so rows no longer run bare under the title bar.
+            .safeAreaBar(edge: .top) {
+                SidebarSearchField(text: $search).padding(.horizontal, 10).padding(.bottom, 6)
+            }
             .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
             Group {
@@ -60,6 +66,31 @@ struct ContentView: View {
     private func reload() async {
         apps = await InstalledApp.installed()
         if case .app(let app) = selection, !apps.contains(app) { selection = nil }
+    }
+}
+
+/// The system search field (magnifier, clear button, Esc to clear), filtering as you type.
+private struct SidebarSearchField: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.target = context.coordinator
+        field.action = #selector(Coordinator.changed)   // sent on every keystroke and on clear
+        return field
+    }
+
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        if field.stringValue != text { field.stringValue = text }
+        context.coordinator.text = $text
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    final class Coordinator: NSObject {
+        var text: Binding<String>
+        init(text: Binding<String>) { self.text = text }
+        @objc func changed(_ field: NSSearchField) { text.wrappedValue = field.stringValue }
     }
 }
 
