@@ -1,0 +1,16 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Allow Full Disk Access" : {},
+    "Without it, diskman can't see leftovers in protected folders such as other apps' containers. Everything you remove still only goes to the Trash." : {},
+    "Open System Settings" : {},
+    "Relaunch" : {},
+    "Restart diskman after enabling access so it takes effect." : {},
+    "Continue Without" : {},
+    "Full Disk Access" : {},
+    "Allowed" : {},
+    "Not allowed" : {},
+    "Lets diskman find leftovers in protected folders. Everything you remove still only goes to the Trash." : {}
+  },
+  "version" : "1.0"
+}
