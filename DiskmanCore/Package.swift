@@ -7,7 +7,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [.library(name: "DiskmanCore", targets: ["DiskmanCore"])],
     targets: [
-        .target(name: "DiskmanCore"),
+        .target(name: "DiskmanCore", resources: [.process("Resources")]),
         .testTarget(name: "DiskmanCoreTests", dependencies: ["DiskmanCore"]),
     ]
 )

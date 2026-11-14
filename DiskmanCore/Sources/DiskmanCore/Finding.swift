@@ -4,7 +4,7 @@ import Foundation
 /// Every feature (uninstaller, cache cleaners, brew, ...) produces findings;
 /// frontends preview them and hand the chosen ones to `Trash`.
 public struct Finding: Identifiable, Hashable, Sendable {
-    public enum Kind: String, Sendable, CaseIterable {
+    public enum Kind: String, Sendable, CaseIterable, Codable {
         case application, applicationSupport, caches, containers, preferences, logs, savedState, launchItems, plugins, receipts
     }
 

@@ -2,9 +2,14 @@ import DiskmanCore
 import SwiftUI
 
 struct ContentView: View {
+    enum Selection: Hashable {
+        case cleanup
+        case app(InstalledApp)
+    }
+
     var fda: FullDiskAccessModel
     @State private var apps: [InstalledApp] = []
-    @State private var selection: InstalledApp?
+    @State private var selection: Selection? = .cleanup
     @State private var search = ""
 
     private var filtered: [InstalledApp] {
@@ -13,23 +18,33 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(filtered, selection: $selection) { app in
-                Label {
-                    Text(verbatim: app.name)
-                } icon: {
-                    Image(nsImage: NSWorkspace.shared.icon(forFile: app.url.path))
+            List(selection: $selection) {
+                Section("Cleanup") {
+                    Label("Caches & Logs", systemImage: "sparkles").tag(Selection.cleanup)
                 }
-                .tag(app)
+                Section("Applications") {
+                    ForEach(filtered) { app in
+                        Label {
+                            Text(verbatim: app.name)
+                        } icon: {
+                            Image(nsImage: NSWorkspace.shared.icon(forFile: app.url.path))
+                        }
+                        .tag(Selection.app(app))
+                    }
+                }
             }
             .searchable(text: $search, placement: .sidebar)
             .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
             Group {
-                if let selection {
-                    UninstallView(app: selection) { await reload() }
-                        .id(selection)
+                switch selection {
+                case .cleanup:
+                    CleanupView().id(fda.isGranted)
+                case .app(let app):
+                    UninstallView(app: app) { await reload() }
+                        .id(app)
                         .id(fda.isGranted)   // rescan once access changes
-                } else {
+                case nil:
                     ContentUnavailableView("Select an App", systemImage: "trash", description: Text("Choose an app to see everything it keeps on your disk."))
                 }
             }
@@ -44,7 +59,7 @@ struct ContentView: View {
 
     private func reload() async {
         apps = await InstalledApp.installed()
-        if let selection, !apps.contains(selection) { self.selection = nil }
+        if case .app(let app) = selection, !apps.contains(app) { selection = nil }
     }
 }
 
