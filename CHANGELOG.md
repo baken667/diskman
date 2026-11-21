@@ -5,6 +5,11 @@ All notable changes to diskman are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Apps installed by a package (owned by root) and their files in /Library can be removed: diskman
+  asks Finder to move them to the Trash, and Finder asks for an administrator password.
+
 ## [1.1] - 2026-11-21
 
 ### Added

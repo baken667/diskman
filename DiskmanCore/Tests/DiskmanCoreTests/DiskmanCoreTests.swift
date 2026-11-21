@@ -125,6 +125,20 @@ import Testing
     #expect(findings.allSatisfy { $0.size > 0 })
 }
 
+@Test func finderIsNeverAskedForDangerousMissingOrLinkedPaths() async throws {
+    let fm = FileManager.default
+    let root = fm.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fm.removeItem(at: root) }
+    try fm.createDirectory(at: root, withIntermediateDirectories: true)
+    let link = root.appending(path: "link"), dangling = root.appending(path: "dangling")
+    try fm.createSymbolicLink(at: link, withDestinationURL: root)
+    try fm.createSymbolicLink(at: dangling, withDestinationURL: root.appending(path: "nowhere"))
+    // None of these reaches Finder (so nothing prompts here): refused, nothing to move, and two links that stay.
+    let failures = await Trash.moveWithFinder([URL(filePath: "/Library"), URL(filePath: "/Applications/\(UUID().uuidString).app"), link, dangling])
+    #expect(failures.map(\.url.path) == ["/Library", link.path, dangling.path])
+    #expect((try? fm.destinationOfSymbolicLink(atPath: link.path)) != nil && (try? fm.destinationOfSymbolicLink(atPath: dangling.path)) != nil)
+}
+
 @Test func refusesToTrashDangerousPaths() {
     for path in ["/", "/Library", "/Users", "/Users/someone", "/Applications/", "/Volumes/External",
                  "/Library/Application Support", "/System/Library",

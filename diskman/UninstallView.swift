@@ -10,7 +10,8 @@ struct UninstallView: View {
 
     @State private var findings: [Finding]?
     @State private var checked: Set<Finding.ID> = []
-    /// Items only an administrator can remove (most of /Library): never preselected, since moving them would just fail.
+    /// Items only an administrator can remove (apps installed by a package, most of /Library).
+    /// Finder moves those, after asking for a password.
     @State private var locked: Set<Finding.ID> = []
     @State private var isRunning = false
     @State private var isWorking = false
@@ -30,7 +31,7 @@ struct UninstallView: View {
                                 HStack {
                                     Text(finding.kind.label)
                                     if locked.contains(finding.id) {
-                                        Text("Needs administrator rights. Remove it in Finder.").font(.caption).foregroundStyle(.secondary)
+                                        Text("Asks for an administrator password").font(.caption).foregroundStyle(.secondary)
                                     } else if !finding.isCertain {
                                         Text("Not sure").font(.caption).foregroundStyle(.secondary)
                                     }
@@ -47,7 +48,6 @@ struct UninstallView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .disabled(locked.contains(finding.id))
                     .contextMenu {
                         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([finding.url]) }
                     }
@@ -79,10 +79,12 @@ struct UninstallView: View {
         .task {
             let found = await LeftoverFinder.findings(for: app)
             findings = found
-            // The app bundle is exempt: its folder is writable even when the bundle is root-owned, so the
-            // check says nothing about it, and a failed move of the app already leaves everything in place.
-            locked = Set(found.filter { $0.kind != .application && !FileManager.default.isDeletableFile(atPath: $0.url.path) }.map(\.id))
-            checked = Set(found.filter(\.isCertain).map(\.id)).subtracting(locked)
+            // For the bundle the question is whether it is writable: its folder is, even when root owns the app.
+            let fm = FileManager.default
+            locked = Set(found.filter {
+                $0.kind == .application ? !fm.isWritableFile(atPath: $0.url.path) : !fm.isDeletableFile(atPath: $0.url.path)
+            }.map(\.id))
+            checked = Set(found.filter(\.isCertain).map(\.id))
         }
         .task {
             // ponytail: polls once a second; observe NSWorkspace launch/terminate notifications if this ever matters.
@@ -117,10 +119,10 @@ struct UninstallView: View {
         let leftovers = chosen.filter { $0.kind != .application }.map(\.url)
         isWorking = true
         Task {
-            // The app goes first: if it cannot be moved (SIP, root-owned), its data stays where it is.
-            var failed = await Trash.move(bundles)
+            // The app goes first: if it cannot be moved (SIP, a refused password), its data stays where it is.
+            var failed = await Self.move(bundles)
             let appStayed = !failed.isEmpty
-            if !appStayed { failed = await Trash.move(leftovers) }
+            if !appStayed { failed = await Self.move(leftovers) }
             let stuck = appStayed ? Set(chosen.map(\.url)) : Set(failed.map(\.url))
             let moved = Set(chosen.map(\.url)).subtracting(stuck)
             findings?.removeAll { moved.contains($0.url) }
@@ -128,6 +130,15 @@ struct UninstallView: View {
             isWorking = false
             await onRemoved(failed)
         }
+    }
+}
+
+extension UninstallView {
+    /// Moves what the user may move directly, then hands the rest to Finder in one go, so there is at most
+    /// one password prompt per step.
+    nonisolated static func move(_ urls: [URL]) async -> [Trash.Failure] {
+        let failed = await Trash.move(urls)
+        return failed.isEmpty ? [] : await Trash.moveWithFinder(failed.map(\.url))
     }
 }
 

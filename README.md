@@ -21,6 +21,9 @@ A tool that removes files should be boring about it:
   unknown suffix, a same-vendor ID, dot folders in your home folder) and cleanup rules that are not
   fully regenerable are shown but never preselected.
 - **The app goes first.** If an app bundle cannot be moved to the Trash, its data is left alone.
+- **No helper running as root.** What needs an administrator (apps installed by a package, files in
+  /Library) is handed to Finder, which asks for the password itself. macOS asks once whether
+  diskman may control Finder.
 - **Running apps are left alone.** An app cannot be removed while it is running, and a cleanup rule
   tied to specific apps is blocked until they quit. Catch-all cache rules cannot know which apps are
   running, so they are opt-in.

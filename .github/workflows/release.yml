@@ -45,9 +45,12 @@ jobs:
           xcodebuild -scheme diskman -configuration Release -derivedDataPath build \
             MARKETING_VERSION="${GITHUB_REF_NAME#v}" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
             CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Developer ID Application" DEVELOPMENT_TEAM="$TEAM_ID" \
-            OTHER_CODE_SIGN_FLAGS=--timestamp CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
+            OTHER_CODE_SIGN_FLAGS=--timestamp DEPLOYMENT_POSTPROCESSING=YES \
             build
           codesign --verify --deep --strict --verbose=2 build/Build/Products/Release/diskman.app
+          # DEPLOYMENT_POSTPROCESSING is what keeps the debugging entitlement out; notarization rejects it.
+          entitlements=$(codesign -d --entitlements - --xml build/Build/Products/Release/diskman.app)
+          if grep -q get-task-allow <<<"$entitlements"; then echo "get-task-allow is present" >&2; exit 1; fi
 
       # Notarized twice: first the app, so the ticket can be stapled to it and it opens offline wherever it
       # ends up; then the disk image built from that stapled app.
