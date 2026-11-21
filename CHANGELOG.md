@@ -5,6 +5,8 @@ All notable changes to diskman are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.3] - 2026-11-21
+
 ### Added
 
 - Each leftover says why it is listed: named after the app's ID, named after the app, same developer,
@@ -69,7 +71,8 @@ First public release.
 - A note in the sidebar when a newer release is out.
 - Signed and notarized builds for Apple silicon.
 
-[Unreleased]: https://github.com/baken667/diskman/compare/v1.2...HEAD
+[Unreleased]: https://github.com/baken667/diskman/compare/v1.3...HEAD
+[1.3]: https://github.com/baken667/diskman/compare/v1.2...v1.3
 [1.2]: https://github.com/baken667/diskman/compare/v1.1...v1.2
 [1.1]: https://github.com/baken667/diskman/compare/v1.0...v1.1
 [1.0]: https://github.com/baken667/diskman/releases/tag/v1.0
