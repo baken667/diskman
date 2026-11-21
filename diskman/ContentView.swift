@@ -15,8 +15,13 @@ struct ContentView: View {
     @State private var failures: [Trash.Failure] = []
     @State private var cleanup = CleanupModel()
 
+    @Environment(\.openWindow) private var openWindow
+
+    /// By name or by any of its bundle IDs ("com.microsoft" finds every Microsoft app).
     private var filtered: [InstalledApp] {
-        search.isEmpty ? apps : apps.filter { $0.name.localizedCaseInsensitiveContains(search) }
+        search.isEmpty ? apps : apps.filter { app in
+            app.name.localizedCaseInsensitiveContains(search) || app.identifiers.contains { $0.localizedCaseInsensitiveContains(search) }
+        }
     }
 
     var body: some View {
@@ -53,8 +58,9 @@ struct ContentView: View {
                 case .cleanup:
                     CleanupView(model: cleanup)
                 case .app(let app):
-                    UninstallView(app: app) { failed in
+                    UninstallView(app: app, hasTwin: apps.contains { $0.url != app.url && $0.bundleID == app.bundleID }) { failed, receipt in
                         failures = failed
+                        if let receipt { cleanup.receipt = receipt }
                         await reload()
                     }
                         .id(app)
@@ -65,13 +71,21 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .safeAreaInset(edge: .top, spacing: 0) {
-                if !fda.isGranted && !fda.isDismissed { FullDiskAccessBanner(model: fda) }
+                if !fda.isGranted && !fda.isDismissed {
+                    FullDiskAccessBanner(model: fda) { openWindow(id: TransparencyView.windowID) }
+                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if let receipt = cleanup.receipt { ReceiptBar(receipt: receipt) { cleanup.receipt = nil } }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in fda.refresh() }
         .task { await reload() }
         .task { await updates.checkAtLaunch() }
-        .onChange(of: fda.isGranted) { cleanup.scan() }   // rescan once access changes
+        .onChange(of: fda.isGranted) {   // rescan once access changes
+            cleanup.scan()
+            Task { await reload() }
+        }
         // Lives here, not in UninstallView: that view goes away with the app it just removed.
         .alert("Some items could not be moved to the Trash", isPresented: .constant(!failures.isEmpty)) {
             Button("OK") { failures = [] }
@@ -81,8 +95,30 @@ struct ContentView: View {
     }
 
     private func reload() async {
-        apps = await InstalledApp.installed()
+        // Downloads and Desktop only with Full Disk Access: without it, looking there makes macOS ask for each.
+        apps = await InstalledApp.installed(in: InstalledApp.defaultDirectories + (fda.isGranted ? InstalledApp.looseDirectories : []))
         if case .app(let app) = selection, !apps.contains(app) { selection = nil }
+    }
+}
+
+/// What the last move amounted to, and the one thing the user still has to do to get the space back.
+private struct ReceiptBar: View {
+    let receipt: Receipt
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).accessibilityHidden(true)
+            Text("Moved \(receipt.bytes.formatted(.byteCount(style: .file))) to the Trash (^[\(receipt.count) items](inflect: true)). The space is freed when you empty the Trash.")
+                .font(.callout)
+            Spacer()
+            Button("Open Trash") { NSWorkspace.shared.open(URL.homeDirectory.appending(path: ".Trash")) }.controlSize(.small)
+            Button("Dismiss", systemImage: "xmark", action: dismiss).labelStyle(.iconOnly).buttonStyle(.borderless)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
     }
 }
 

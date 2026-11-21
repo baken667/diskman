@@ -14,7 +14,7 @@ public enum Updates {
 
     /// Where a person downloads the newest version.
     public static let page = URL(string: "https://github.com/baken667/diskman/releases/latest")!
-    static let api = URL(string: "https://api.github.com/repos/baken667/diskman/releases/latest")!
+    public static let api = URL(string: "https://api.github.com/repos/baken667/diskman/releases/latest")!
     /// Release files are only ever fetched from here.
     static let downloads = "https://github.com/baken667/diskman/releases/download/"
     /// What a genuine release is: this bundle ID, signed with this team's Developer ID certificate.

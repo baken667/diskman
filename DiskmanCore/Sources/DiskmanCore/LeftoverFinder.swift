@@ -3,7 +3,7 @@ import Foundation
 /// Finds what an app leaves behind in the Library folders and a few places outside them.
 public enum LeftoverFinder {
     /// Where apps keep files, relative to a Library folder. Add a row to cover a new place.
-    static let locations: [(path: String, kind: Finding.Kind)] = [
+    public static let locations: [(path: String, kind: Finding.Kind)] = [
         ("Application Support", .applicationSupport),
         ("Application Support/CrashReporter", .logs),
         ("Application Support/com.apple.sharedfilelist/com.apple.LSSharedFileList.ApplicationRecentDocuments", .preferences),
@@ -54,7 +54,7 @@ public enum LeftoverFinder {
 
     /// Dot and XDG folders in the home folder. Command-line tools share these with apps,
     /// so only exact name matches count, and never as certain.
-    static let homeLocations: [(path: String, kind: Finding.Kind)] = [
+    public static let homeLocations: [(path: String, kind: Finding.Kind)] = [
         (".", .applicationSupport),
         (".config", .preferences),
         (".cache", .caches),
@@ -77,8 +77,8 @@ public enum LeftoverFinder {
         home: URL = .homeDirectory
     ) async -> [Finding] {
         let teamID = app.teamID
-        func match(_ url: URL, names: [String] = app.names) -> Bool? {
-            LeftoverFinder.match(entry: url.lastPathComponent, identifiers: app.identifiers, names: names, teamID: teamID)
+        func match(_ url: URL, names: [String] = app.names) -> Match? {
+            LeftoverFinder.matchReason(entry: url.lastPathComponent, identifiers: app.identifiers, names: names, teamID: teamID)
         }
         // "com.google.android.studio" keeps its data in ".../Google/AndroidStudio2026.1",
         // "Google Chrome" in ".../Google/Chrome".
@@ -87,17 +87,17 @@ public enum LeftoverFinder {
             .filter { !vendor.isEmpty && $0.hasPrefix(vendor) && $0.count > vendor.count }
             .map { String($0.dropFirst(vendor.count)) }
 
-        var found = [(url: app.url, kind: Finding.Kind.application, certain: true)]
+        var found: [Found] = [(app.url, .application, true, nil)]
         let folders = libraries.flatMap { library in locations.map { (library.appending(path: $0.path), $0.kind) } } + systemFolders
         for (folder, kind) in folders {
             for entry in contents(folder) {
                 let byContent = kind == .launchItems ? launchJobMatch(entry, app: app) : nil
                 let hits = [match(entry), byContent].compactMap { $0 }
-                if !hits.isEmpty {
-                    found.append((entry, kind, hits.contains(true)))
+                if let hit = hits.first(where: \.certain) ?? hits.first {
+                    found.append((entry, kind, hit.certain, hit.reason))
                 } else if !vendor.isEmpty && normalized(entry.lastPathComponent) == vendor {
                     for child in contents(entry) {
-                        if let certain = match(child, names: vendorNames) { found.append((child, kind, certain)) }
+                        if let hit = match(child, names: vendorNames) { found.append((child, kind, hit.certain, hit.reason)) }
                     }
                 }
             }
@@ -107,10 +107,10 @@ public enum LeftoverFinder {
             for entry in contents(home.appending(path: location.path)) {
                 let name = entry.lastPathComponent
                 guard location.path != "." || name.hasPrefix(".") else { continue }
-                if names.contains(normalized(String(name.drop { $0 == "." }))) { found.append((entry, location.kind, false)) }
+                if names.contains(normalized(String(name.drop { $0 == "." }))) { found.append((entry, location.kind, false, .homeFolder)) }
             }
         }
-        return deduplicated(found).map { Finding(url: $0.url, kind: $0.kind, isCertain: $0.certain) }
+        return deduplicated(found).map { Finding(url: $0.url, kind: $0.kind, isCertain: $0.certain, reason: $0.reason) }
     }
 
     /// Unreadable folders (no Full Disk Access) are skipped, not fatal.
@@ -122,6 +122,14 @@ public enum LeftoverFinder {
     // ponytail: name-based matching like AppCleaner; misses data filed under an unrelated name.
     // Upgrade path: per-app rules.
     static func match(entry: String, identifiers: [String], names: [String], teamID: String? = nil) -> Bool? {
+        matchReason(entry: entry, identifiers: identifiers, names: names, teamID: teamID)?.certain
+    }
+
+    typealias Match = (certain: Bool, reason: Finding.Reason)
+    typealias Found = (url: URL, kind: Finding.Kind, certain: Bool, reason: Finding.Reason?)
+
+    /// `match`, with what the name was matched against.
+    static func matchReason(entry: String, identifiers: [String], names: [String], teamID: String? = nil) -> Match? {
         let lowered = entry.lowercased()
         var result: Bool?
         // Component-wise only, and only for real reverse-DNS IDs, so "com.foo.app" never claims
@@ -138,11 +146,11 @@ public enum LeftoverFinder {
                 let tempName = (prefix.isEmpty || prefix == ".") && token.count == 6
                     && token.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
                     && (prefix == "." || token.contains(where: \.isNumber))
-                if (knownPrefix && knownSuffix) || tempName { return true }
+                if (knownPrefix && knownSuffix) || tempName { return (true, .bundleID) }
                 result = false
             }
         }
-        if result != nil { return result }
+        if let result { return (result, .bundleID) }
 
         let entry = normalized(entry)
         let byName = names.map(normalized).contains { name in
@@ -153,19 +161,19 @@ public enum LeftoverFinder {
             // ("androidstudio2026.1"), but never another word ("foobar").
             return (next == "." && !rest.dropFirst().contains(".")) || (name.count >= 4 && !next.isLetter && next != ".")
         }
-        if byName { return true }
+        if byName { return (true, .name) }
 
         // "EQHXZ8M8AV.com.google.drivefs": same signer and vendor, but maybe another product.
         let vendorPrefix = identifiers.first?.split(separator: ".").prefix(2).joined(separator: ".").lowercased() ?? ""
         if let teamID, vendorPrefix.contains("."), lowered.hasPrefix(teamID.lowercased() + "." + vendorPrefix + ".") {
-            return false
+            return (false, .developer)
         }
         return nil
     }
 
     /// Whether a launchd job (by its plist content, whatever the file is called) runs the app or a part of it.
     /// BundleProgram is relative to the bundle named by AssociatedBundleIdentifiers, so that key decides.
-    static func launchJobMatch(_ plist: URL, app: InstalledApp) -> Bool? {
+    static func launchJobMatch(_ plist: URL, app: InstalledApp) -> Match? {
         guard plist.pathExtension == "plist", let data = try? Data(contentsOf: plist),
               let job = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
         else { return nil }
@@ -176,15 +184,16 @@ public enum LeftoverFinder {
         let appPath = app.url.resolvingSymlinksInPath().path
         if associated.contains(where: { ids.contains($0.lowercased()) })
             || paths.contains(where: { $0 == appPath || $0.hasPrefix(appPath + "/") }) {
-            return true
+            return (true, .launchJob)
         }
-        return (job["Label"] as? String).flatMap { match(entry: $0, identifiers: app.identifiers, names: []) }
+        // Found through the file's content either way, so that is the reason, whatever the label matched.
+        return (job["Label"] as? String).flatMap { match(entry: $0, identifiers: app.identifiers, names: []) }.map { ($0, .launchJob) }
     }
 
     /// No item twice, and no item inside another listed one. Paths are compared with symlinked folders
     /// resolved (/var → /private/var), but a symlinked entry itself is kept, never followed.
-    static func deduplicated(_ found: [(url: URL, kind: Finding.Kind, certain: Bool)]) -> [(url: URL, kind: Finding.Kind, certain: Bool)] {
-        var result: [(url: URL, kind: Finding.Kind, certain: Bool)] = []
+    static func deduplicated(_ found: [Found]) -> [Found] {
+        var result: [Found] = []
         for var item in found {
             let parent = item.url.deletingLastPathComponent()
             if let real = realpath(parent.path, nil) {
@@ -192,6 +201,8 @@ public enum LeftoverFinder {
                 free(real)
             }
             if let index = result.firstIndex(where: { $0.url.path == item.url.path }) {
+                // The certain hit explains the row; two uncertain ones keep the first reason.
+                if item.certain && !result[index].certain { result[index].reason = item.reason }
                 result[index].certain = result[index].certain || item.certain
             } else {
                 result.append(item)

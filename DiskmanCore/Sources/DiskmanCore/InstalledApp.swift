@@ -58,6 +58,18 @@ public struct InstalledApp: Identifiable, Hashable, Sendable {
         return (info as? [String: Any])?[kSecCodeInfoTeamIdentifier as String] as? String
     }
 
+    /// Bought or downloaded from the Mac App Store, so installing it again is free and one click.
+    public var isFromAppStore: Bool {
+        FileManager.default.fileExists(atPath: url.appending(path: "Contents/_MASReceipt/receipt").path)
+    }
+
+    /// Where apps also end up when they are run without being installed. macOS guards these folders,
+    /// so they are only worth listing once Full Disk Access is granted (otherwise each one prompts).
+    public static let looseDirectories = [
+        URL.homeDirectory.appending(path: "Downloads"),
+        URL.homeDirectory.appending(path: "Desktop"),
+    ]
+
     public static let defaultDirectories = [
         URL(filePath: "/Applications"),
         URL.homeDirectory.appending(path: "Applications"),

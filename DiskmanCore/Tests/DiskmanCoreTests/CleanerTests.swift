@@ -14,6 +14,37 @@ import Testing
         #expect(literal.count >= 2, "\(path)")
     }
     #expect(rules.last?.id == "system.caches") // generic last
+    // A report-only rule is never preselected, and a hint belongs to a rule that explains rather than removes.
+    for rule in rules {
+        if rule.isReportOnly { #expect(!rule.isSafe, "\(rule.id)") }
+        if rule.hint != nil { #expect(rule.isReportOnly, "\(rule.id)") }
+    }
+}
+
+@Test func reportOnlyRulesAreMeasuredButNeverMoved() async throws {
+    let fm = FileManager.default
+    let home = fm.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? fm.removeItem(at: home) }
+    for path in ["vm/disk/data", "cache/a/data"] {
+        let url = home.appending(path: path)
+        try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(count: 5000).write(to: url)
+    }
+    let rules = try JSONDecoder().decode([CleanupRule].self, from: Data("""
+        [{"id": "vm", "group": "G", "kind": "applicationSupport", "isSafe": false, "reportOnly": true, "name": "VM",
+          "description": "d", "paths": ["~/vm/*"], "appBundleIDs": [], "hint": "tool prune"},
+         {"id": "cache", "group": "G", "kind": "caches", "isSafe": true, "name": "Cache", "description": "d",
+          "paths": ["~/cache/*"], "appBundleIDs": []}]
+        """.utf8))
+    let results = await Cleaner.scan(rules, home: home)
+    #expect(results.map(\.id) == ["vm", "cache"] && results[0].size > 0)
+    #expect(results[0].removable.isEmpty && results[1].removable.count == 1)
+    #expect(rules[0].hint == "tool prune" && rules[1].hint == nil && !rules[1].isReportOnly)
+    // Asked to move all of it, then nothing, then the report-only disk by name: it stays every time.
+    _ = await Cleaner.move([results[0]])
+    _ = await Cleaner.move(results, only: [])
+    _ = await Cleaner.move(results, only: [results[0].findings[0].url])   // named outright, still not moved
+    #expect(fm.fileExists(atPath: home.appending(path: "vm/disk").path) && fm.fileExists(atPath: home.appending(path: "cache/a").path))
 }
 
 @Test func scansRulesInOrder() async throws {

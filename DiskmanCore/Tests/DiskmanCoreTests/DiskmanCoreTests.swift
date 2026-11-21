@@ -121,6 +121,11 @@ import Testing
         "home/.local/share/Foo": false,
     ])
     #expect(findings.count == found.count)
+    // Each leftover says why it is listed; the app bundle needs no reason.
+    func reason(_ suffix: String) -> Finding.Reason? { findings.first { $0.url.path.hasSuffix(suffix) }?.reason }
+    #expect(reason("Apps/Foo.app") == nil && reason("home/.foo") == .homeFolder)
+    #expect(findings.dropFirst().allSatisfy { $0.reason != nil })
+    #expect(Set(findings.compactMap(\.reason)).isSuperset(of: [.bundleID, .name, .launchJob, .homeFolder]))
     #expect(findings.first?.kind == .application)
     #expect(findings.allSatisfy { $0.size > 0 })
 }

@@ -1,6 +1,17 @@
 import DiskmanCore
 import SwiftUI
 
+/// What the last move to the Trash amounted to. ContentView shows it for both screens.
+struct Receipt: Equatable {
+    let count: Int
+    let bytes: Int64
+}
+
+func copyToPasteboard(_ text: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+}
+
 /// The scan and the user's choices. Owned by ContentView so they survive a visit to another sidebar
 /// item: sizing every rule walks DerivedData and the Caches folder, which is too slow to redo each time.
 @MainActor @Observable
@@ -11,13 +22,31 @@ final class CleanupModel {
     var scanned = 0                            // rules sized so far, found or not
     /// Checkboxes the user changed. Everything else follows `isSafe`, so a rescan never undoes a choice.
     var overrides: [String: Bool] = [:]
+    /// Single items ticked differently from their rule: keep today's project, or pick two models out of thirty.
+    var itemOverrides: [URL: Bool] = [:]
     var isWorking = false                      // a move to the Trash is running
     var failures: [Trash.Failure] = []
+    var receipt: Receipt?
     private var task: Task<Void, Never>?
 
     var isScanning: Bool { scanned < Self.rules.count }
 
-    func isChecked(_ rule: CleanupRule) -> Bool { overrides[rule.id] ?? rule.isSafe }
+    func isChecked(_ rule: CleanupRule) -> Bool { !rule.isReportOnly && (overrides[rule.id] ?? rule.isSafe) }
+
+    func isChecked(_ finding: Finding, of rule: CleanupRule) -> Bool {
+        !rule.isReportOnly && (itemOverrides[finding.url] ?? isChecked(rule))
+    }
+
+    /// Ticking a rule is a decision about all of it, so it replaces the per-item choices made before.
+    func setChecked(_ isOn: Bool, rule: CleanupRule) {
+        overrides[rule.id] = isOn
+        for finding in found[rule.id]?.findings ?? [] { itemOverrides[finding.url] = nil }
+    }
+
+    /// The items of this result that would be moved right now.
+    func chosen(in result: CleanupResult) -> [Finding] {
+        result.removable.filter { isChecked($0, of: result.rule) }
+    }
 
     func scanIfNeeded() { if task == nil { scan() } }
 
@@ -35,16 +64,20 @@ final class CleanupModel {
         }
     }
 
-    /// Moves everything the rules found to the Trash, then rescans. Lives here, not in the view,
+    /// Moves what is chosen in these results to the Trash, then rescans. Lives here, not in the view,
     /// so leaving the screen mid-move can neither start a second move nor lose the failures.
     func trash(_ results: [CleanupResult]) {
-        let urls = results.flatMap { $0.findings.map(\.url) }
-        guard !urls.isEmpty, !isWorking, !isScanning else { return }
+        let chosen = results.flatMap(chosen(in:))
+        guard !chosen.isEmpty, !isWorking, !isScanning else { return }
         isWorking = true
         Task {
-            failures = await Trash.move(urls)
-            // Opting in to a "review first" rule covers this one cleanup, not whatever it finds next time.
+            failures = await Cleaner.move(results, only: Set(chosen.map(\.url)))
+            // Counted from what is really gone: the core may have skipped a rule whose app just launched.
+            let moved = chosen.filter { (try? FileManager.default.attributesOfItem(atPath: $0.url.path)) == nil }
+            if !moved.isEmpty { receipt = Receipt(count: moved.count, bytes: moved.reduce(0) { $0 + $1.size }) }
+            // Opting in to a "review first" rule or item covers this one cleanup, not whatever is found next time.
             for result in results where !result.rule.isSafe { overrides[result.id] = nil }
+            for finding in chosen { itemOverrides[finding.url] = nil }
             isWorking = false
             scan()
         }
@@ -55,7 +88,7 @@ final class CleanupModel {
 struct CleanupView: View {
     var model: CleanupModel
 
-    /// Findings listed per rule; the rest are summarised ("+ N more") so rules with thousands of items stay smooth.
+    /// Findings listed per rule until the user asks for all of them, so rules with thousands of items stay smooth.
     static let visibleFindings = 50
     /// Totals at or above this ask for confirmation first.
     private static let confirmThreshold: Int64 = 1_000_000_000
@@ -63,8 +96,12 @@ struct CleanupView: View {
     private static let rules = CleanupModel.rules
 
     @State private var expanded: Set<String> = []
-    @State private var runningApps: [String: String] = [:]   // rule id -> name of a running app that blocks it
+    @State private var showsAll: Set<String> = []                       // rules listing every finding
+    @State private var runningApps: [String: [RunningApps.App]] = [:]   // rule id -> running apps that block it
     @State private var isConfirming = false
+    /// What the button offered when it was clicked. The move may shrink it (an app launched), never grow it:
+    /// a rule that became free while the confirmation was up was not part of what the user agreed to.
+    @State private var pending: [CleanupResult] = []
 
     private var isScanning: Bool { model.isScanning }
     /// Rules that found something, in rule order.
@@ -77,9 +114,9 @@ struct CleanupView: View {
     }
 
     private var removable: [CleanupResult] {
-        results.filter { model.isChecked($0.rule) && runningApps[$0.id] == nil }
+        results.filter { runningApps[$0.id] == nil && !model.chosen(in: $0).isEmpty }
     }
-    private var removableSize: Int64 { removable.reduce(0) { $0 + $1.size } }
+    private var removableSize: Int64 { removable.flatMap(model.chosen(in:)).reduce(0) { $0 + $1.size } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -97,18 +134,7 @@ struct CleanupView: View {
                         ForEach(groups, id: \.name) { group in
                             Section {
                                 ForEach(group.results) { result in
-                                    RuleRow(result: result, isOn: binding(for: result.rule), isExpanded: expansion(for: result.id), runningApp: runningApps[result.id])
-                                        .padding(.vertical, 8)
-                                    if expanded.contains(result.id) {
-                                        ForEach(result.findings.prefix(Self.visibleFindings)) { FindingRow(finding: $0).padding(.vertical, 3) }
-                                        if result.findings.count > Self.visibleFindings {
-                                            Text("+ \(result.findings.count - Self.visibleFindings) more")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                                .padding(.leading, FindingRow.indent)
-                                                .padding(.vertical, 3)
-                                        }
-                                    }
+                                    rows(for: result)
                                     Divider()
                                 }
                             } header: {
@@ -138,6 +164,7 @@ struct CleanupView: View {
                 }
                 Spacer()
                 Button("Move \(removableSize.formatted(.byteCount(style: .file))) to Trash", role: .destructive) {
+                    pending = removable
                     if removableSize >= Self.confirmThreshold { isConfirming = true } else { moveToTrash() }
                 }
                 .disabled(removable.isEmpty || model.isWorking || isScanning)
@@ -172,6 +199,29 @@ struct CleanupView: View {
         }
     }
 
+    /// A rule and, when expanded, its items, each with its own checkbox.
+    @ViewBuilder private func rows(for result: CleanupResult) -> some View {
+        let rule = result.rule, blockers = runningApps[result.id] ?? []
+        RuleRow(result: result, isOn: binding(for: rule), isExpanded: expansion(for: result.id),
+                blocker: blockers.first, chosen: model.chosen(in: result).count)
+            .padding(.vertical, 8)
+        if expanded.contains(result.id) {
+            let all = showsAll.contains(result.id) || result.findings.count <= Self.visibleFindings
+            ForEach(all ? result.findings : Array(result.findings.prefix(Self.visibleFindings))) { finding in
+                FindingRow(finding: finding, isOn: rule.isReportOnly ? nil : binding(for: finding, of: rule))
+                    .disabled(!blockers.isEmpty)
+                    .padding(.vertical, 3)
+            }
+            if !all {
+                Button("Show all \(result.findings.count) items") { showsAll.insert(result.id) }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                    .padding(.leading, FindingRow.indent)
+                    .padding(.vertical, 3)
+            }
+        }
+    }
+
     private var progress: some View {
         ProgressView(value: Double(model.scanned), total: Double(Self.rules.count)) {
             Text("Scanning \(model.scanned) of \(Self.rules.count)…")
@@ -183,7 +233,15 @@ struct CleanupView: View {
         Binding {
             model.isChecked(rule) && runningApps[rule.id] == nil
         } set: { isOn in
-            model.overrides[rule.id] = isOn
+            model.setChecked(isOn, rule: rule)
+        }
+    }
+
+    private func binding(for finding: Finding, of rule: CleanupRule) -> Binding<Bool> {
+        Binding {
+            model.isChecked(finding, of: rule) && runningApps[rule.id] == nil
+        } set: { isOn in
+            model.itemOverrides[finding.url] = isOn == model.isChecked(rule) ? nil : isOn
         }
     }
 
@@ -196,30 +254,33 @@ struct CleanupView: View {
     }
 
     private func refreshRunning() {
-        var running: [String: String] = [:]
-        for rule in Self.rules {
-            for id in rule.appBundleIDs {
-                if let app = NSRunningApplication.runningApplications(withBundleIdentifier: id).first {
-                    running[rule.id] = app.localizedName ?? id
-                    break
-                }
-            }
+        var running: [String: [RunningApps.App]] = [:]
+        for rule in Self.rules where !rule.appBundleIDs.isEmpty {
+            let apps = RunningApps.running(of: rule.appBundleIDs)
+            if !apps.isEmpty { running[rule.id] = apps }
         }
         if running != runningApps { runningApps = running }
     }
 
     private func moveToTrash() {
         refreshRunning()   // an app may have launched while the confirmation was up
-        model.trash(removable)
+        model.trash(pending.filter { runningApps[$0.id] == nil })
+        pending = []
     }
 }
 
 /// A rule's checkbox (its text toggles it too), size, and a chevron that shows its items as rows below.
+/// A report-only rule has no checkbox: it is there to be read.
 private struct RuleRow: View {
     let result: CleanupResult
     @Binding var isOn: Bool
     @Binding var isExpanded: Bool
-    let runningApp: String?
+    /// A running app that has to quit first. With several, they are named one after another.
+    let blocker: RunningApps.App?
+    /// How many of the rule's items would be moved now.
+    let chosen: Int
+
+    private var rule: CleanupRule { result.rule }
 
     var body: some View {
         HStack {
@@ -235,42 +296,72 @@ private struct RuleRow: View {
             .foregroundStyle(.secondary)
             .accessibilityLabel(isExpanded ? Text("Hide Items") : Text("Show Items"))
 
-            Toggle(isOn: $isOn) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(LocalizedStringKey(result.rule.name))
-                    Text(LocalizedStringKey(result.rule.description))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if let runningApp {
-                        Text("Quit \(runningApp) first").font(.caption).foregroundStyle(.orange)
-                    } else if !result.rule.isSafe {
-                        Text("Review before removing").font(.caption).foregroundStyle(.secondary)
+            if rule.isReportOnly {
+                HStack(alignment: .firstTextBaseline) {
+                    Image(systemName: "info.circle").foregroundStyle(.secondary).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        texts
+                        Text("Shown for information. diskman does not remove this.").font(.caption).foregroundStyle(.secondary)
+                        if let hint = rule.hint {
+                            HStack {
+                                Text(verbatim: hint).font(.caption.monospaced()).textSelection(.enabled)
+                                Button("Copy") { copyToPasteboard(hint) }.controlSize(.small)
+                            }
+                            .padding(.top, 2)
+                        }
                     }
                 }
+            } else {
+                Toggle(isOn: $isOn) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        texts
+                        if let blocker {
+                            Text("Quit \(blocker.name) first").font(.caption).foregroundStyle(.orange)
+                        } else if chosen != (isOn ? result.findings.count : 0) {
+                            // Whenever the items disagree with the checkbox, say what will really be moved.
+                            Text("\(chosen) of \(result.findings.count) items selected").font(.caption).foregroundStyle(.secondary)
+                        } else if !rule.isSafe {
+                            Text("Review before removing").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .disabled(blocker != nil)
+                .accessibilityLabel(Text(LocalizedStringKey(rule.name)))
             }
-            .disabled(runningApp != nil)
-            .accessibilityLabel(Text(LocalizedStringKey(result.rule.name)))
             Spacer()
+            // Outside the disabled checkbox, so it stays clickable.
+            if let blocker, !rule.isReportOnly {
+                Button("Quit \(blocker.name)") { RunningApps.quit(blocker) }.controlSize(.small)
+            }
             Text(result.size, format: .byteCount(style: .file))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .accessibilityLabel(Text("Size \(result.size.formatted(.byteCount(style: .file)))"))
         }
     }
+
+    @ViewBuilder private var texts: some View {
+        Text(LocalizedStringKey(rule.name))
+        Text(LocalizedStringKey(rule.description))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
 }
 
-/// One path with its size and a "Show in Finder" context menu.
+/// One path with its size, its own checkbox unless its rule is report-only, and a context menu.
 private struct FindingRow: View {
     /// Lines items up under their rule's text.
     static let indent: CGFloat = 46
     let finding: Finding
+    let isOn: Binding<Bool>?
 
     var body: some View {
         HStack {
-            Text(verbatim: finding.url.path)
-                .font(.caption)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            if let isOn {
+                Toggle(isOn: isOn) { path }.controlSize(.small)
+            } else {
+                path
+            }
             Spacer()
             Text(finding.size, format: .byteCount(style: .file))
                 .font(.caption)
@@ -278,8 +369,17 @@ private struct FindingRow: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.leading, Self.indent)
+        .help(finding.url.path)
         .contextMenu {
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([finding.url]) }
+            Button("Copy Path") { copyToPasteboard(finding.url.path) }
         }
+    }
+
+    private var path: some View {
+        Text(verbatim: finding.url.path)
+            .font(.caption)
+            .lineLimit(1)
+            .truncationMode(.middle)
     }
 }

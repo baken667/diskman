@@ -5,7 +5,10 @@ import SwiftUI
 @MainActor @Observable
 final class FullDiskAccessModel {
     var isGranted = FullDiskAccess.isGranted()   // probing at launch also lists the app in System Settings
-    var isDismissed = false
+    /// "Continue Without" is an answer, not a pause: it holds across launches. Settings still offers access.
+    var isDismissed = UserDefaults.standard.bool(forKey: "fullDiskAccessDismissed") {
+        didSet { UserDefaults.standard.set(isDismissed, forKey: "fullDiskAccessDismissed") }
+    }
 
     func refresh() { isGranted = FullDiskAccess.isGranted() }
 
@@ -22,6 +25,8 @@ final class FullDiskAccessModel {
 /// Non-blocking banner shown above the detail area while access is missing.
 struct FullDiskAccessBanner: View {
     var model: FullDiskAccessModel
+    /// Opens the window that lists everything the app reads.
+    let showWhatIsRead: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -35,6 +40,7 @@ struct FullDiskAccessBanner: View {
                     Button("Relaunch") { model.relaunch() }
                         .help("Restart diskman after enabling access so it takes effect.")
                     Button("Continue Without") { withAnimation { model.isDismissed = true } }
+                    Button("What does diskman read?", action: showWhatIsRead).buttonStyle(.link)
                 }
                 .controlSize(.small).padding(.top, 4)
             }

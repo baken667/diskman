@@ -17,6 +17,11 @@ public struct CleanupRule: Decodable, Identifiable, Hashable, Sendable {
     public let isSafe: Bool
     /// Apps to quit before cleaning.
     public let appBundleIDs: [String]
+    /// A command the owning tool offers for this ("xcrun simctl delete unavailable"). Shown to copy, never run.
+    public let hint: String?
+    /// Measured and explained, never removed: data that only its own tool can shrink safely (a VM disk, device backups).
+    public var isReportOnly: Bool { reportOnly ?? false }
+    let reportOnly: Bool?
 
     public static let builtIn: [CleanupRule] = {
         let url = Bundle.module.url(forResource: "cleanup-rules", withExtension: "json")!
@@ -30,9 +35,21 @@ public struct CleanupResult: Identifiable, Sendable {
     public let findings: [Finding]
     public var size: Int64 { findings.reduce(0) { $0 + $1.size } }
     public var id: String { rule.id }
+    /// What may go to the Trash: nothing for a report-only rule, whatever a frontend has checked.
+    public var removable: [Finding] { rule.isReportOnly ? [] : findings }
 }
 
 public enum Cleaner {
+    /// Moves the chosen findings of these results to the Trash. Every frontend removes through here, so a
+    /// report-only rule or a rule whose app is running is left alone whatever the caller selected.
+    public static func move(_ results: [CleanupResult], only chosen: Set<URL>? = nil) async -> [Trash.Failure] {
+        var urls: [URL] = []
+        for result in results where await RunningApps.running(of: result.rule.appBundleIDs).isEmpty {
+            urls += result.removable.map(\.url).filter { chosen?.contains($0) ?? true }
+        }
+        return await Trash.move(urls)
+    }
+
     /// Rules that found something, in rule order. Each path belongs to the first rule that claims it:
     /// a later rule skips items equal to, inside, or containing an already-claimed path
     /// (so a generic "~/Library/Caches/*" rule doesn't double-count Homebrew's cache).

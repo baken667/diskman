@@ -15,8 +15,16 @@ A tool that removes files should be boring about it:
 
 - **Everything goes to the Trash.** There is one code path for removal and it only moves items to
   the Trash. Nothing is deleted permanently; space is freed when you empty the Trash yourself.
-- **You see it first.** The uninstaller lists every item with its path and size. The cleanup screen
-  shows each rule with its total size; expand a rule to see its largest items.
+- **You see it first.** The uninstaller lists every item with its path, its size and the reason it is
+  listed. The cleanup screen shows each rule with its total size; expand a rule to see its items and
+  untick the ones you want to keep.
+- **Some things are only measured.** Simulator devices, virtual machine disks and device backups are
+  shown with their size and, where one exists, the command of the tool that owns them. diskman
+  never removes those.
+- **It tells you what it reads.** *Help › What diskman Reads* lists the folders and rules it looks
+  at, generated from the same tables the scanners use.
+- **A second copy changes nothing.** If the app you remove has a twin elsewhere on the Mac, only
+  the copy itself is ticked; the shared data stays unless you tick it.
 - **Unsure means unchecked.** Leftovers that may belong to another product (a bundle ID with an
   unknown suffix, a same-vendor ID, dot folders in your home folder) and cleanup rules that are not
   fully regenerable are shown but never preselected.
@@ -50,6 +58,11 @@ uses the network, and the request
 carries nothing about you or your disk. Click **Update and Restart** and diskman downloads that
 release, checks that it is signed by the same developer, replaces itself and reopens. Nothing is
 installed until you click. Turn the check off in Settings.
+
+### Shortcuts
+
+*Check What diskman Can Clean* is available as an action in Shortcuts and Spotlight. It measures the
+safe caches and logs and removes nothing; cleaning always goes through the preview in the app.
 
 ## Build
 
@@ -109,6 +122,8 @@ A rule is one JSON object:
 | `name`, `description` | Shown to the user. The description must say what happens after removal. |
 | `paths` | Patterns starting with `~/`. Any path component may be a glob (`*`, `*.log`). A pattern must contain at least one glob, and only items inside its literal prefix are matched. |
 | `appBundleIDs` | Apps that must be quit before the rule can run. May be empty. |
+| `reportOnly` | Optional. `true` for data that only its own tool can shrink safely: it is measured and explained, never removed. Must not be `isSafe`. |
+| `hint` | Optional, report-only rules only. A command of the owning tool, shown to copy and never run. Only add one you have run yourself. |
 
 Guidelines:
 
