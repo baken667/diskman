@@ -29,7 +29,7 @@ A tool that removes files should be boring about it:
 
 ## Requirements
 
-- macOS 27.2 or later
+- macOS 26 or later
 - Xcode 27.2 or later to build
 
 There are no prebuilt releases yet; build it from source.

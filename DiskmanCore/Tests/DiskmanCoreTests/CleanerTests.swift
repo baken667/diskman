@@ -7,6 +7,12 @@ import Testing
     #expect(rules.count > 20)
     #expect(Set(rules.map(\.id)).count == rules.count)
     #expect(rules.allSatisfy { !$0.paths.isEmpty && $0.paths.allSatisfy { $0.hasPrefix("~/") && $0.contains("*") } })
+    // At least two literal folders before the first glob: a rule may empty "~/Library/Caches",
+    // never "~/Library" or the home folder itself.
+    for path in rules.flatMap(\.paths) {
+        let literal = path.dropFirst(2).split(separator: "/").prefix { !$0.contains { "*?[".contains($0) } }
+        #expect(literal.count >= 2, "\(path)")
+    }
     #expect(rules.last?.id == "system.caches") // generic last
 }
 

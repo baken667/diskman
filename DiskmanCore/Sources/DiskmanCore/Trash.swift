@@ -21,10 +21,19 @@ public enum Trash {
         }
     }
 
-    /// Last line of defence against a bad caller: never trash a volume root,
-    /// a top-level folder (/Library, /Users, ...) or a home folder.
+    /// Last line of defence against a bad caller or a bad rule: never trash a volume, a top-level folder
+    /// (/Library, /Users, ...), a home folder, or the folders everything else lives in (~/Documents,
+    /// ~/Library, ~/Library/Caches, /Library/Application Support, ...). Dot folders in a home are fine.
     static func isSafe(_ url: URL) -> Bool {
-        let url = url.standardizedFileURL
-        return url.pathComponents.count > 2 && url.deletingLastPathComponent().path != "/Users"
+        let parts = url.standardizedFileURL.pathComponents   // ["/", "Users", "me", "Library", ...]
+        guard parts.count > 2 else { return false }
+        switch parts[1] {
+        case "Volumes", "Library", "System": return parts.count > 3
+        case "Users":
+            guard parts.count > 3 else { return false }   // a home folder
+            if parts.count == 4 { return parts[3].hasPrefix(".") }
+            return parts[3] != "Library" || parts.count > 5
+        default: return true
+        }
     }
 }

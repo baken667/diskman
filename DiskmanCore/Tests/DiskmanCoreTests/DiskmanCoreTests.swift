@@ -126,9 +126,14 @@ import Testing
 }
 
 @Test func refusesToTrashDangerousPaths() {
-    for path in ["/", "/Library", "/Users", "/Users/someone", "/Applications/"] {
+    for path in ["/", "/Library", "/Users", "/Users/someone", "/Applications/", "/Volumes/External",
+                 "/Library/Application Support", "/System/Library",
+                 "/Users/someone/Documents", "/Users/someone/Library", "/Users/someone/Library/Caches"] {
         #expect(!Trash.isSafe(URL(filePath: path)), "\(path)")
     }
-    #expect(Trash.isSafe(URL(filePath: "/Applications/Foo.app")))
-    #expect(Trash.isSafe(URL(filePath: "/Users/someone/Library/Caches/com.fooinc.foo")))
+    for path in ["/Applications/Foo.app", "/Users/someone/Applications/Foo.app", "/Users/someone/.foo",
+                 "/Users/someone/Library/Caches/com.fooinc.foo", "/Library/LaunchDaemons/com.fooinc.foo.plist",
+                 "/Volumes/External/Foo.app", "/private/var/db/receipts/com.fooinc.foo.pkg.plist"] {
+        #expect(Trash.isSafe(URL(filePath: path)), "\(path)")
+    }
 }

@@ -3,7 +3,7 @@ import Foundation
 
 /// A kind of regenerable clutter (a tool's download cache, an app's logs, ...) described by path patterns.
 /// The built-in rules live in Resources/cleanup-rules.json; names and descriptions there are English
-/// and the frontends localize them by `id`.
+/// and shown as they are (key a string catalog by `id` once there is a second language).
 public struct CleanupRule: Decodable, Identifiable, Hashable, Sendable {
     public let id: String
     public let name: String
