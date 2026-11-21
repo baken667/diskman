@@ -5,6 +5,8 @@ All notable changes to diskman are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.2] - 2026-11-21
+
 ### Added
 
 - Apps installed by a package (owned by root) and their files in /Library can be removed: diskman
@@ -40,6 +42,7 @@ First public release.
 - A note in the sidebar when a newer release is out.
 - Signed and notarized builds for Apple silicon.
 
-[Unreleased]: https://github.com/baken667/diskman/compare/v1.1...HEAD
+[Unreleased]: https://github.com/baken667/diskman/compare/v1.2...HEAD
+[1.2]: https://github.com/baken667/diskman/compare/v1.1...v1.2
 [1.1]: https://github.com/baken667/diskman/compare/v1.0...v1.1
 [1.0]: https://github.com/baken667/diskman/releases/tag/v1.0
