@@ -5,6 +5,8 @@ All notable changes to diskman are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.1] - 2026-11-21
+
 ### Added
 
 - Update and Restart: diskman downloads a new release, checks that it is signed by the same
@@ -33,5 +35,6 @@ First public release.
 - A note in the sidebar when a newer release is out.
 - Signed and notarized builds for Apple silicon.
 
-[Unreleased]: https://github.com/baken667/diskman/compare/v1.0...HEAD
+[Unreleased]: https://github.com/baken667/diskman/compare/v1.1...HEAD
+[1.1]: https://github.com/baken667/diskman/compare/v1.0...v1.1
 [1.0]: https://github.com/baken667/diskman/releases/tag/v1.0
