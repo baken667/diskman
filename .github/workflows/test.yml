@@ -1,0 +1,19 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: DiskmanCore tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: swift test
+        working-directory: DiskmanCore
+        run: swift test
