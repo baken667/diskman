@@ -49,33 +49,46 @@ jobs:
             build
           codesign --verify --deep --strict --verbose=2 build/Build/Products/Release/diskman.app
 
-      - name: Make the disk image
-        run: |
-          mkdir dmg
-          cp -R build/Build/Products/Release/diskman.app dmg/
-          ln -s /Applications dmg/Applications
-          hdiutil create -volname diskman -srcfolder dmg -format UDZO "$DMG"
-          codesign --sign "Developer ID Application" --timestamp "$DMG"
+      # Notarized twice: first the app, so the ticket can be stapled to it and it opens offline wherever it
+      # ends up; then the disk image built from that stapled app.
+      - name: Notarize and package
         env:
-          DMG: diskman-${{ github.ref_name }}-arm64.dmg
-
-      # Notarizing the image covers the app inside it. Only the image is stapled, so the app's
-      # first launch on a Mac that never saw the image checks with Apple online.
-      - name: Notarize
-        env:
-          DMG: diskman-${{ github.ref_name }}-arm64.dmg
+          NAME: diskman-${{ github.ref_name }}-arm64
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
+          app=build/Build/Products/Release/diskman.app
           printf '%s' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc.p8"
-          xcrun notarytool submit "$DMG" --key "$RUNNER_TEMP/asc.p8" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait
-          rm "$RUNNER_TEMP/asc.p8"
-          xcrun stapler staple "$DMG"
-          xcrun stapler validate "$DMG"
+          trap 'rm -f "$RUNNER_TEMP/asc.p8"' EXIT
+          notarize() { xcrun notarytool submit "$1" --key "$RUNNER_TEMP/asc.p8" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait; }
 
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/submission.zip"
+          notarize "$RUNNER_TEMP/submission.zip"
+          xcrun stapler staple "$app"
+
+          mkdir dmg
+          cp -R "$app" dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname diskman -srcfolder dmg -format UDZO "$NAME.dmg"
+          codesign --sign "Developer ID Application" --timestamp "$NAME.dmg"
+          notarize "$NAME.dmg"
+          xcrun stapler staple "$NAME.dmg"
+
+          # The archive the app downloads to update itself in place.
+          ditto -c -k --keepParent "$app" "$NAME.zip"
+          xcrun stapler validate "$app"
+          xcrun stapler validate "$NAME.dmg"
+
+      # Release notes are this version's section of CHANGELOG.md.
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-          DMG: diskman-${{ github.ref_name }}-arm64.dmg
-        run: gh release create "$GITHUB_REF_NAME" "$DMG" --verify-tag --generate-notes
+          NAME: diskman-${{ github.ref_name }}-arm64
+        run: |
+          awk -v heading="## [${GITHUB_REF_NAME#v}]" 'index($0, heading) == 1 { on = 1; next } /^## \[/ { on = 0 } on' CHANGELOG.md > notes.md
+          if grep -q '[^[:space:]]' notes.md; then
+            gh release create "$GITHUB_REF_NAME" "$NAME.dmg" "$NAME.zip" --verify-tag --notes-file notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" "$NAME.dmg" "$NAME.zip" --verify-tag --generate-notes
+          fi

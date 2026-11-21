@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest something diskman should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The situation you are in, not the solution. "My disk fills up with X and I cannot tell where it is" is more useful than "add a button".
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like diskman to do
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: How you handle it today
+      description: Another app, a terminal command, or nothing.
+  - type: markdown
+    attributes:
+      value: >
+        diskman only ever moves things to the Trash and shows them first. Ideas that need permanent
+        deletion or cleaning without a preview are unlikely to be taken.

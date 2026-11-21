@@ -42,9 +42,11 @@ Apple.
 ### Updates
 
 When it opens, diskman asks GitHub for the number of the latest release and shows a note in the
-sidebar if a newer one is out. That request is the only time the app uses the network, and it
-carries nothing about you or your disk. Nothing is downloaded or installed for you: the note links
-to the release page. Turn the check off in Settings.
+sidebar if a newer one is out. That request and the update you ask for are the only times the app
+uses the network, and the request
+carries nothing about you or your disk. Click **Update and Restart** and diskman downloads that
+release, checks that it is signed by the same developer, replaces itself and reopens. Nothing is
+installed until you click. Turn the check off in Settings.
 
 ## Build
 
@@ -114,7 +116,9 @@ Guidelines:
 
 ## Releasing
 
-Pushing a tag builds, signs, notarizes and publishes that version:
+Move the entries under *Unreleased* in [CHANGELOG.md](CHANGELOG.md) to a section for the new
+version; that section becomes the release notes. Then push a tag, which builds, signs, notarizes
+and publishes that version:
 
 ```sh
 git tag v1.1

@@ -16,13 +16,7 @@ final class FullDiskAccessModel {
     }
 
     /// Full Disk Access often only applies to a freshly launched process.
-    func relaunch() {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/sh")
-        task.arguments = ["-c", "sleep 0.5; open -n \"$0\"", Bundle.main.bundlePath]
-        try? task.run()
-        NSApp.terminate(nil)
-    }
+    func relaunch() { relaunchApp() }
 }
 
 /// Non-blocking banner shown above the detail area while access is missing.

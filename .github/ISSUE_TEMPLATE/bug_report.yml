@@ -1,0 +1,54 @@
+name: Bug report
+description: Something does not work, or something was removed that should not have been
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Uninstalling an app
+        - Caches & Logs cleanup
+        - Updates
+        - Full Disk Access
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: paths
+    attributes:
+      label: App, rule or paths involved
+      description: >
+        The app you were removing, the cleanup rule, or the paths diskman showed. If something was
+        moved to the Trash that should have stayed, list it here: that is the most serious kind of bug.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: diskman version
+      description: Settings, under Updates.
+      placeholder: "1.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "27.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: fda
+    attributes:
+      label: Full Disk Access
+      options:
+        - Allowed
+        - Not allowed
+        - Not sure

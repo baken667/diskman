@@ -1,0 +1,41 @@
+name: Cleanup rule
+description: Propose a cache or log location diskman should know about, or report a rule that is wrong
+labels: [enhancement]
+body:
+  - type: input
+    id: tool
+    attributes:
+      label: App or tool
+      placeholder: "Bun"
+    validations:
+      required: true
+  - type: textarea
+    id: paths
+    attributes:
+      label: Paths
+      description: Where it keeps the data, starting with ~/. Check them on your own Mac.
+      render: text
+      placeholder: "~/.bun/install/cache/*"
+    validations:
+      required: true
+  - type: textarea
+    id: after
+    attributes:
+      label: What happens after it is removed
+      description: Is everything rebuilt or downloaded again on its own? Is anything lost for good (logins, offline content, local builds)?
+    validations:
+      required: true
+  - type: dropdown
+    id: running
+    attributes:
+      label: Does the app have to be quit first
+      options:
+        - "Yes"
+        - "No"
+        - It is a command-line tool
+        - Not sure
+  - type: markdown
+    attributes:
+      value: >
+        Rules live in one JSON file, so a pull request is welcome too: see
+        "Adding a cleanup rule" in the README.

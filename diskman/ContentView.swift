@@ -44,7 +44,7 @@ struct ContentView: View {
                 SidebarSearchField(text: $search).padding(.horizontal, 10).padding(.bottom, 6)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if let version = updates.availableVersion { UpdateBanner(version: version, model: updates) }
+                if let release = updates.available { UpdateBanner(release: release, model: updates) }
             }
             .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
