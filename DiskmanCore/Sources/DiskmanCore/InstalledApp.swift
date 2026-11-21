@@ -74,6 +74,9 @@ public struct InstalledApp: Identifiable, Hashable, Sendable {
                 let top = contents(directory)
                 return top + top.filter { $0.pathExtension != "app" && $0.hasDirectoryPath }.flatMap(contents)
             }
+            // A symlink is not an app we can remove: Safari's points into the sealed system volume,
+            // others point at a bundle one folder down, which is listed on its own.
+            .filter { (try? $0.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink != true }
             .compactMap(InstalledApp.init(url:))
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }

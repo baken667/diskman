@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var apps: [InstalledApp] = []
     @State private var selection: Selection? = .cleanup
     @State private var search = ""
+    @State private var failures: [Trash.Failure] = []
+    @State private var cleanup = CleanupModel()
 
     private var filtered: [InstalledApp] {
         search.isEmpty ? apps : apps.filter { $0.name.localizedCaseInsensitiveContains(search) }
@@ -45,9 +47,12 @@ struct ContentView: View {
             Group {
                 switch selection {
                 case .cleanup:
-                    CleanupView().id(fda.isGranted)
+                    CleanupView(model: cleanup)
                 case .app(let app):
-                    UninstallView(app: app) { await reload() }
+                    UninstallView(app: app) { failed in
+                        failures = failed
+                        await reload()
+                    }
                         .id(app)
                         .id(fda.isGranted)   // rescan once access changes
                 case nil:
@@ -61,6 +66,13 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in fda.refresh() }
         .task { await reload() }
+        .onChange(of: fda.isGranted) { cleanup.scan() }   // rescan once access changes
+        // Lives here, not in UninstallView: that view goes away with the app it just removed.
+        .alert("Some items could not be moved to the Trash", isPresented: .constant(!failures.isEmpty)) {
+            Button("OK") { failures = [] }
+        } message: {
+            Text(verbatim: failures.map { "\($0.url.path)\n\($0.message)" }.joined(separator: "\n\n"))
+        }
     }
 
     private func reload() async {

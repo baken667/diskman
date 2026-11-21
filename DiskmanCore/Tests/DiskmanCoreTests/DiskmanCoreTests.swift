@@ -85,7 +85,11 @@ import Testing
     // The same Library reached twice through a symlink is listed once.
     try fm.createSymbolicLink(at: root.appending(path: "LibraryLink"), withDestinationURL: root.appending(path: "Library"))
 
+    // A symlink to an app (Safari's, or one into a subfolder) is not listed as an app of its own.
+    try fm.createSymbolicLink(at: root.appending(path: "Apps/Link.app"), withDestinationURL: root.appending(path: "Apps/Foo.app"))
+
     let apps = await InstalledApp.installed(in: [root.appending(path: "Apps")])
+    #expect(apps.count == 1)
     let app = try #require(apps.first)
     #expect(app.bundleID == "com.fooinc.foo" && app.name == "Foo" && app.teamID == nil)
 

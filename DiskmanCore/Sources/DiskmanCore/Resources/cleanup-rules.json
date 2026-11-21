@@ -140,7 +140,7 @@
    "name": "Firefox Cache",
    "description": "Web pages, scripts and graphics Firefox stored to load sites faster (history, passwords and logins are kept); sites load a bit slower until it fills again.",
    "paths": ["~/Library/Caches/Firefox/*"], "appBundleIDs": ["org.mozilla.firefox"]},
-  {"id": "electron.caches", "group": "Apps", "kind": "caches", "isSafe": true,
+  {"id": "electron.caches", "group": "Apps", "kind": "caches", "isSafe": false,
    "name": "App Web Caches",
    "description": "Web and graphics caches of apps built on Electron or Chromium, such as Slack, Discord, VS Code or Claude (your data and logins are kept); each app rebuilds them when it next starts. Quit these apps first.",
    "paths": ["~/Library/Application Support/*/Cache", "~/Library/Application Support/*/Code Cache",
