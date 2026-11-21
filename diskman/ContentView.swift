@@ -8,6 +8,7 @@ struct ContentView: View {
     }
 
     var fda: FullDiskAccessModel
+    var updates: UpdateModel
     @State private var apps: [InstalledApp] = []
     @State private var selection: Selection? = .cleanup
     @State private var search = ""
@@ -42,6 +43,9 @@ struct ContentView: View {
             .safeAreaBar(edge: .top) {
                 SidebarSearchField(text: $search).padding(.horizontal, 10).padding(.bottom, 6)
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if let version = updates.availableVersion { UpdateBanner(version: version, model: updates) }
+            }
             .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
             Group {
@@ -66,6 +70,7 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in fda.refresh() }
         .task { await reload() }
+        .task { await updates.checkAtLaunch() }
         .onChange(of: fda.isGranted) { cleanup.scan() }   // rescan once access changes
         // Lives here, not in UninstallView: that view goes away with the app it just removed.
         .alert("Some items could not be moved to the Trash", isPresented: .constant(!failures.isEmpty)) {
@@ -107,5 +112,5 @@ private struct SidebarSearchField: NSViewRepresentable {
 }
 
 #Preview {
-    ContentView(fda: FullDiskAccessModel())
+    ContentView(fda: FullDiskAccessModel(), updates: UpdateModel())
 }

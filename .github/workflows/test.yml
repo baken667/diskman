@@ -17,3 +17,13 @@ jobs:
       - name: swift test
         working-directory: DiskmanCore
         run: swift test
+
+  app:
+    name: App build
+    runs-on: xcode-27   # the project format needs Xcode 27
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_27.2.app
+      - name: Build
+        run: xcodebuild -scheme diskman -configuration Release -derivedDataPath build CODE_SIGNING_ALLOWED=NO build

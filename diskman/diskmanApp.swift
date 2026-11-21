@@ -10,11 +10,12 @@ import SwiftUI
 @main
 struct diskmanApp: App {
     @State private var fda = FullDiskAccessModel()
+    @State private var updates = UpdateModel()
 
     var body: some Scene {
         WindowGroup {
-            ContentView(fda: fda)
+            ContentView(fda: fda, updates: updates)
         }
-        Settings { SettingsView(model: fda) }
+        Settings { SettingsView(model: fda, updates: updates) }
     }
 }

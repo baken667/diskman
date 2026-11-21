@@ -56,6 +56,7 @@ struct FullDiskAccessBanner: View {
 /// Settings scene content so the user can come back to Full Disk Access later.
 struct SettingsView: View {
     var model: FullDiskAccessModel
+    var updates: UpdateModel
 
     var body: some View {
         Form {
@@ -70,6 +71,7 @@ struct SettingsView: View {
             }
             Text("Lets diskman find leftovers in protected folders. Everything you remove still only goes to the Trash.")
                 .font(.callout).foregroundStyle(.secondary)
+            UpdateSettings(model: updates)
         }
         .formStyle(.grouped)
         .frame(width: 440)

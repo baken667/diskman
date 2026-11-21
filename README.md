@@ -29,10 +29,22 @@ A tool that removes files should be boring about it:
 
 ## Requirements
 
+- A Mac with Apple silicon. Intel Macs are not supported.
 - macOS 26 or later
 - Xcode 27.2 or later to build
 
-There are no prebuilt releases yet; build it from source.
+## Install
+
+Download the latest disk image from [Releases](https://github.com/baken667/diskman/releases/latest),
+open it and drag diskman to Applications. Releases are signed with a Developer ID and notarized by
+Apple.
+
+### Updates
+
+When it opens, diskman asks GitHub for the number of the latest release and shows a note in the
+sidebar if a newer one is out. That request is the only time the app uses the network, and it
+carries nothing about you or your disk. Nothing is downloaded or installed for you: the note links
+to the release page. Turn the check off in Settings.
 
 ## Build
 
@@ -99,6 +111,26 @@ Guidelines:
   catch-all ones.
 - Check the path on a real machine, and check what the tool does after its cache is gone.
 - When in doubt, set `isSafe` to `false`.
+
+## Releasing
+
+Pushing a tag builds, signs, notarizes and publishes that version:
+
+```sh
+git tag v1.1
+git push origin v1.1
+```
+
+The version number comes from the tag. The [release workflow](.github/workflows/release.yml) needs
+these repository secrets:
+
+| Secret | What it is |
+| --- | --- |
+| `DEVELOPER_ID_P12` | The "Developer ID Application" certificate with its private key, exported as `.p12` and base64-encoded. |
+| `DEVELOPER_ID_P12_PASSWORD` | The password chosen when exporting it. |
+| `ASC_KEY_P8` | An App Store Connect API key (the contents of the `.p8` file), used for notarization. |
+| `ASC_KEY_ID` | That key's ID. |
+| `ASC_ISSUER_ID` | The issuer ID shown above the key list in App Store Connect. |
 
 ## License
 
